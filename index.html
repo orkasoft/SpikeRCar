@@ -68,7 +68,8 @@
                 document.getElementById('status').innerHTML = "Hub Durumu: <span class='highlight'>Aranıyor...</span>";
                 
                 hubDevice = await navigator.bluetooth.requestDevice({
-                    filters: [{ namePrefix: "LEGO" }, { services: [LWP3_SERVICE_UUID] }],
+                    filters:acceptAllDevices: true, optionalServices: [LWP3_SERVICE_UUID],
+                    [{ namePrefix: "LEGO" }, { services: [LWP3_SERVICE_UUID] }],
                     optionalServices: [LWP3_SERVICE_UUID]
                 });
 
