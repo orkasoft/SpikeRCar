@@ -149,29 +149,53 @@ let lastSentSteering = null;
 const statusText = document.getElementById('statusText');
 const telemetry = document.getElementById('telemetry');
 
-// NORDIC UART REPL UUID (SPIKE Prime MicroPython Canlı Komut Hattı)
+// SPIKE v3 / MicroPython Uyumlu Servis UUID'leri
 const NORDIC_UART_SERVICE_UUID = '6e400001-b5a3-f393-e0a9-e50e24dcca9e';
-const NORDIC_UART_RX_CHAR_UUID  = '6e400002-b5a3-f393-e0a9-e50e24dcca9e';
+const LWP3_SERVICE_UUID        = '00001623-1212-efde-1623-785feabcd123';
+const PYBRICKS_SERVICE_UUID    = 'c5f50001-8280-46da-89f4-6d8059d4aeef';
 
 // -----------------------------------------------------------------------------
-// 1. BLUETOOTH BAĞLANTISI (Tıklama Anında Doğrudan Arama Başlatılır)
+// 1. BLUETOOTH BAĞLANTISI (Çoklu Servis Desteği ile Güncellendi)
 // -----------------------------------------------------------------------------
 document.getElementById('connectBtn').addEventListener('click', async () => {
     try {
         statusText.innerText = "Durum: Cihaz aranıyor...";
+        statusText.style.color = "#ffcc00";
 
-        // requestDevice doğrudan tıklama anında çağrılmalıdır (zaman aşımı engelini aşar)
+        // Tıklama anında doğrudan diyalog penceresini açar
         bleDevice = await navigator.bluetooth.requestDevice({
             acceptAllDevices: true,
-            optionalServices: [NORDIC_UART_SERVICE_UUID, '00001623-1212-efde-1623-785feabcd123']
+            optionalServices: [
+                NORDIC_UART_SERVICE_UUID,
+                LWP3_SERVICE_UUID,
+                PYBRICKS_SERVICE_UUID
+            ]
         });
 
         statusText.innerText = "Durum: Hub'a bağlanılıyor...";
         bleDevice.addEventListener('gattserverdisconnected', onDisconnected);
 
         const server = await bleDevice.gatt.connect();
-        const service = await server.getPrimaryService(NORDIC_UART_SERVICE_UUID);
-        rxCharacteristic = await service.getCharacteristic(NORDIC_UART_RX_CHAR_UUID);
+
+        // Hub üzerinde aktif olan servisi sırayla tespit et
+        let service;
+        try {
+            service = await server.getPrimaryService(NORDIC_UART_SERVICE_UUID);
+        } catch (e1) {
+            try {
+                service = await server.getPrimaryService(PYBRICKS_SERVICE_UUID);
+            } catch (e2) {
+                service = await server.getPrimaryService(LWP3_SERVICE_UUID);
+            }
+        }
+
+        // Seçilen servisin yazılabilir komut karakteristiğini otomatik bul
+        const characteristics = await service.getCharacteristics();
+        rxCharacteristic = characteristics.find(c => c.properties.writeWithoutResponse || c.properties.write);
+
+        if (!rxCharacteristic) {
+            throw new Error("Yazılabilir Bluetooth komut kanalı bulunamadı!");
+        }
 
         statusText.innerText = "Durum: Bağlandı! (Hazır)";
         statusText.style.color = "#00ffcc";
@@ -290,7 +314,7 @@ async function sendDataToSpike(t, s) {
         const encoder = new TextEncoder();
         const data = encoder.encode(command);
 
-        if (rxCharacteristic.writeValueWithoutResponse) {
+        if (rxCharacteristic.properties.writeWithoutResponse) {
             await rxCharacteristic.writeValueWithoutResponse(data);
         } else {
             await rxCharacteristic.writeValue(data);
