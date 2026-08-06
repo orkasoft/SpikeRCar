@@ -2,160 +2,93 @@
 <html lang="tr">
 <head>
     <meta charset="UTF-8">
-    <meta name="viewport" content="width=device-width, initial-scale=1.0">
-    <title>SPIKE Prime - B ve E Motor Kontrolü</title>
+    <title>SPIKE Prime PC Klavye Kontrolü</title>
     <style>
-        body { 
-            font-family: Arial, sans-serif; 
-            text-align: center; 
-            padding: 20px; 
-            background-color: #1e1e2e; 
-            color: #ffffff; 
-        }
-        .btn { 
-            padding: 18px 30px; 
-            font-size: 18px; 
-            font-weight: bold; 
-            margin: 15px; 
-            border-radius: 12px; 
-            border: none; 
-            background: #00b4d8; 
-            color: white; 
-            box-shadow: 0 4px 10px rgba(0,0,0,0.3);
-        }
-        .status-card { 
-            background: #2b2b40; 
-            padding: 15px; 
-            margin: 10px auto; 
-            max-width: 400px; 
-            border-radius: 10px; 
-            font-size: 16px;
-        }
-        .highlight { color: #7661e2; font-weight: bold; }
+        body { font-family: Arial, sans-serif; text-align: center; margin-top: 50px; background: #222; color: #fff; }
+        button { padding: 15px 30px; font-size: 18px; cursor: pointer; background: #008CBA; color: white; border: none; border-radius: 5px; }
+        .status { margin-top: 20px; font-size: 20px; font-weight: bold; }
+        .controls-info { margin-top: 30px; display: inline-block; text-align: left; background: #333; padding: 20px; border-radius: 8px; }
     </style>
 </head>
 <body>
 
-    <h2>LEGO SPIKE Prime - Çift Motor Köprüsü</h2>
+    <h1>F1 SPIKE Prime PC Klavye Kontrol Paneli</h1>
+    <button id="connectBtn">1. SPIKE Hub'a Bağlan (Bluetooth)</button>
     
-    <button class="btn" id="connectBtn">1. SPIKE Hub'a Bağlan</button>
+    <div class="status" id="statusText">Durum: Bağlantı Yok</div>
 
-    <div class="status-card" id="status">Hub Durumu: <span class="highlight">Bağlı Değil</span></div>
-    <div class="status-card" id="gamepadStatus">Kumanda Durumu: <span class="highlight">Bekleniyor...</span></div>
-    <div class="status-card">
-        <div>Motor B (Sol): <span id="speedB" class="highlight">0</span></div>
-        <div>Motor E (Sağ): <span id="speedE" class="highlight">0</span></div>
+    <div class="controls-info">
+        <h3>Klavye Kontrolleri:</h3>
+        <ul>
+            <li><b>W / Yukarı Ok:</b> İleri Gaz</li>
+            <li><b>S / Aşağı Ok:</b> Geri Git</li>
+            <li><b>A / Sol Ok:</b> Sola Dön</li>
+            <li><b>D / Sağ Ok:</b> Sağa Dön</li>
+            <li><b>Space (Boşluk):</b> Fren / Dur</li>
+        </ul>
+        <p><b>Anlık Gönderilen Veri:</b> <span id="telemetry">Gaz: 0 | Direksiyon: 0</span></p>
     </div>
 
-    <script>
-        // LEGO Wireless Protocol (LWP3) UUID Bilgileri
-        const LWP3_SERVICE_UUID = "00001623-1212-efde-1623-785feabcd123";
-        const LWP3_CHARACTERISTIC_UUID = "00001624-1212-efde-1623-785feabcd123";
+<script>
+let throttle = 0;
+let steering = 0;
+let keyState = {};
 
-        // Port Adresleri (SPIKE Prime Port Hex Karşılıkları)
-        const PORT_B = 0x01; // B Portu
-        const PORT_E = 0x04; // E Portu
+const statusText = document.getElementById('statusText');
+const telemetry = document.getElementById('telemetry');
 
-        let hubDevice = null;
-        let lwpCharacteristic = null;
-        
-        let lastSpeedB = 0;
-        let lastSpeedE = 0;
+// Klavye Basılma Olayı (KeyDown)
+window.addEventListener('keydown', (e) => {
+    keyState[e.code] = true;
+    updateControlValues();
+});
 
-        // 1. SPIKE Hub'a Bluetooth İle Bağlanma
-        document.getElementById('connectBtn').addEventListener('click', async () => {
-            try {
-                document.getElementById('status').innerHTML = "Hub Durumu: <span class='highlight'>Aranıyor...</span>";
-                
-                hubDevice = await navigator.bluetooth.requestDevice({
-                    filters:acceptAllDevices: true, optionalServices: [LWP3_SERVICE_UUID],
-                    [{ namePrefix: "LEGO" }, { services: [LWP3_SERVICE_UUID] }],
-                    optionalServices: [LWP3_SERVICE_UUID]
-                });
+// Klavye Bırakılma Olayı (KeyUp)
+window.addEventListener('keyup', (e) => {
+    keyState[e.code] = false;
+    updateControlValues();
+});
 
-                const server = await hubDevice.gatt.connect();
-                const service = await server.getPrimaryService(LWP3_SERVICE_UUID);
-                lwpCharacteristic = await service.getCharacteristic(LWP3_CHARACTERISTIC_UUID);
+function updateControlValues() {
+    // Gaz Hesaplama
+    if (keyState['KeyW'] || keyState['ArrowUp']) {
+        throttle = 80; // İleri hız
+    } else if (keyState['KeyS'] || keyState['ArrowDown']) {
+        throttle = -60; // Geri hız
+    } else {
+        throttle = 0;
+    }
 
-                document.getElementById('status').innerHTML = "Hub Durumu: <span style='color:#4caf50;'>Bağlandı! ✅</span>";
-            } catch (error) {
-                document.getElementById('status').innerHTML = "Bağlantı Hatası: " + error;
-            }
-        });
+    // Direksiyon Hesaplama
+    if (keyState['KeyA'] || keyState['ArrowLeft']) {
+        steering = -100; // Tam Sol
+    } else if (keyState['KeyD'] || keyState['ArrowRight']) {
+        steering = 100; // Tam Sağ
+    } else {
+        steering = 0;
+    }
 
-        // 2. LEERFEI LF-T28 Kumandasını Dinleme
-        window.addEventListener("gamepadconnected", (e) => {
-            document.getElementById('gamepadStatus').innerHTML = "Kumanda: <span style='color:#4caf50;'>" + e.gamepad.id + "</span>";
-            updateLoop();
-        });
+    // Acil Fren (Space)
+    if (keyState['Space']) {
+        throttle = 0;
+        steering = 0;
+    }
 
-        window.addEventListener("gamepaddisconnected", () => {
-            document.getElementById('gamepadStatus').innerHTML = "Kumanda: <span style='color:#f44336;'>Bağlantı Kesildi</span>";
-        });
+    telemetry.innerText = `Gaz: ${throttle} | Direksiyon: ${steering}`;
+    
+    // Bluetooth Uyumlu Köprü Fonksiyonuna Gönder
+    sendDataToSpike(throttle, steering);
+}
 
-        // 3. Sürekli Girdi Döngüsü (Anlık Hareket Hesaplama)
-        function updateLoop() {
-            const gamepads = navigator.getGamepads();
-            if (gamepads[0]) {
-                const gp = gamepads[0];
+function sendDataToSpike(t, s) {
+    // Bluetooth veri paketiniz burada SPIKE Hub'a REPL veya LWP3 komutu olarak iletilir.
+    // Örn: BluetoothCharacteristic.writeValue(new TextEncoder().encode(`drive_car(${t}, ${s})\r`));
+}
 
-                // Sol Analog Y Eksen (İleri/Geri) ve Sağ Analog X Eksen (Dönüş)
-                let drive = -gp.axes[1]; // Sol analog yukarı-aşağı (-1 ile 1)
-                let turn = gp.axes[2] || gp.axes[0];  // Sağ analog sağ-sol (-1 ile 1)
-
-                // Ölü bölge (Deadzone) ayarı: Analog hassasiyet toleransı
-                if (Math.abs(drive) < 0.1) drive = 0;
-                if (Math.abs(turn) < 0.1) turn = 0;
-
-                // Tank Sürüş Hesabı (B Motoru Sol, E Motoru Sağ)
-                let speedB = Math.round((drive + turn) * 100);
-                let speedE = Math.round((drive - turn) * 100);
-
-                // Sınırlandırma (-100 ile 100 arası)
-                speedB = Math.max(-100, Math.min(100, speedB));
-                speedE = Math.max(-100, Math.min(100, speedE));
-
-                // Yalnızca hız değiştiğinde komut gönder (Bluetooth yoğunluğunu önlemek için)
-                if (speedB !== lastSpeedB || speedE !== lastSpeedE) {
-                    lastSpeedB = speedB;
-                    lastSpeedE = speedE;
-
-                    document.getElementById('speedB').innerText = speedB;
-                    document.getElementById('speedE').innerText = speedE;
-
-                    // B ve E motorlarına paket gönder
-                    sendMotorSpeed(PORT_B, speedB);
-                    sendMotorSpeed(PORT_E, speedE);
-                }
-            }
-            requestAnimationFrame(updateLoop);
-        }
-
-        // 4. LEGO LWP3 Protokolü ile Belirtilen Porta Hız Komutu Yollama
-        async function sendMotorSpeed(port, speed) {
-            if (!lwpCharacteristic) return;
-
-            // Byte Dönüştürme (Negatif hızlar için 256 tamamlama)
-            let speedByte = speed < 0 ? (256 + speed) : speed;
-
-            // LWP3 Doğrudan Güç Komutu Paketi
-            let command = new Uint8Array([
-                0x08,       // Paket Uzunluğu (8 byte)
-                0x00,       // Hub ID
-                0x81,       // Port Çıkış Komutu
-                port,       // Hedef Port (PORT_B veya PORT_E)
-                0x11,       // Başlat / Tamamla Seçeneği
-                0x51,       // WriteDirectModeData
-                0x00,       // Mod 0 (Power / Speed)
-                speedByte   // Hız Değeri (-100 / 100)
-            ]);
-
-            try {
-                await lwpCharacteristic.writeValueWithoutResponse(command);
-            } catch (e) {
-                console.log("Komut Gönderim Hatası:", e);
-            }
-        }
-    </script>
+document.getElementById('connectBtn').addEventListener('click', async () => {
+    statusText.innerText = "Durum: Bağlanıyor...";
+    // Web Bluetooth Bağlantı Mantığı...
+});
+</script>
 </body>
 </html>
