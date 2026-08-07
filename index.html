@@ -3,7 +3,7 @@
 <head>
     <meta charset="UTF-8">
     <meta name="viewport" content="width=device-width, initial-scale=1.0">
-    <title>SPIKE Prime PC Klavye & Ekran Kontrolü v9</title>
+    <title>SPIKE Prime PC Klavye & Ekran Kontrolü v10 (Pybricks)</title>
     <style>
         body { 
             font-family: Arial, sans-serif; 
@@ -146,67 +146,29 @@ let lastSentSteering = null;
 const statusText = document.getElementById('statusText');
 const telemetry = document.getElementById('telemetry');
 
-// SPIKE v3, Pybricks ve standart Nordic UART servislerinin TÜMÜ
-const CANDIDATE_SERVICES = [
-    '6e400001-b5a3-f393-e0a9-e50e24dcca9e', // Nordic UART Service (NUS / REPL)
-    '00001623-1212-efde-1623-785feabcd123', // LEGO LWP3 Message Service
-    '00001624-1212-efde-1623-785feabcd123', // LEGO LWP3 Hub Service
-    '00001625-1212-efde-1623-785feabcd123', // LEGO Console Service
-    'c5f50001-8280-46da-89f4-6d8059d4aeef', // Pybricks REPL Service
-    '0000e001-1212-efde-1623-785feabcd123', // SPIKE v3 Wireless Stream
-    '00001530-1212-efde-1623-785feabcd123'  // Legacy Bootloader / DFU
-];
-
-const sleep = ms => new Promise(resolve => setTimeout(resolve, ms));
+// Pybricks Birebir Nordic UART REPL UUID Adresleri
+const NORDIC_UART_SERVICE_UUID = '6e400001-b5a3-f393-e0a9-e50e24dcca9e';
+const NORDIC_UART_RX_CHAR_UUID  = '6e400002-b5a3-f393-e0a9-e50e24dcca9e';
 
 // -----------------------------------------------------------------------------
-// 1. BLUETOOTH BAĞLANTISI (Doğrudan Kanal Avcısı)
+// 1. BLUETOOTH BAĞLANTISI (Doğrudan Pybricks Servisine Odaklı)
 // -----------------------------------------------------------------------------
 document.getElementById('connectBtn').addEventListener('click', async () => {
     try {
-        statusText.innerText = "Durum: Cihaz aranıyor...";
+        statusText.innerText = "Durum: Pybricks Aranıyor...";
         statusText.style.color = "#ffcc00";
 
-        // Hub adıyla veya tüm cihazlarla eşleşmeyi sağla
+        // Filtre doğrudan Pybricks servis UUID'sine odaklanır
         bleDevice = await navigator.bluetooth.requestDevice({
-            acceptAllDevices: true,
-            optionalServices: CANDIDATE_SERVICES
+            filters: [{ services: [NORDIC_UART_SERVICE_UUID] }]
         });
 
         statusText.innerText = "Durum: Hub'a bağlanılıyor...";
         bleDevice.addEventListener('gattserverdisconnected', onDisconnected);
 
         const server = await bleDevice.gatt.connect();
-        await sleep(500);
-
-        rxCharacteristic = null;
-
-        // Her bir servis adresi altında yazma yetkisi veren kanalı tara
-        for (const serviceUuid of CANDIDATE_SERVICES) {
-            try {
-                console.log("Servis taranıyor:", serviceUuid);
-                const service = await server.getPrimaryService(serviceUuid);
-                const characteristics = await service.getCharacteristics();
-                
-                for (const char of characteristics) {
-                    console.log("  -> Karakteristik bulundu:", char.uuid, "Özellikler:", char.properties);
-                    // writeWithoutResponse veya write özelliği olan kanalı yakala
-                    if (char.properties.writeWithoutResponse || char.properties.write) {
-                        rxCharacteristic = char;
-                        console.log("✅ BAĞLANILAN BAŞARILI KANAL:", char.uuid);
-                        break;
-                    }
-                }
-                if (rxCharacteristic) break;
-            } catch (e) {
-                // Eşleşmeyen servisi geç
-                continue;
-            }
-        }
-
-        if (!rxCharacteristic) {
-            throw new Error("Yazılabilir GATT kanalı bulunamadı. Lütfen SPIKE uygulamasında Python kodunu çalıştırdıktan sonra Hub üzerindeki Bluetooth butonuna bir kez basıp tekrar deneyin.");
-        }
+        const service = await server.getPrimaryService(NORDIC_UART_SERVICE_UUID);
+        rxCharacteristic = await service.getCharacteristic(NORDIC_UART_RX_CHAR_UUID);
 
         statusText.innerText = "Durum: Bağlandı! (Hazır)";
         statusText.style.color = "#00ffcc";
@@ -310,7 +272,7 @@ function updateControlValues() {
 }
 
 // -----------------------------------------------------------------------------
-// 5. SPIKE HUB'A CANLI REPL GÖNDERİMİ
+// 5. PYBRICKS HUB'A CANLI REPL KOMUTU GÖNDERİMİ
 // -----------------------------------------------------------------------------
 async function sendDataToSpike(t, s) {
     if (!rxCharacteristic) return;
